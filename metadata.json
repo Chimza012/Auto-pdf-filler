@@ -1,0 +1,6 @@
+{
+  "name": "Remix: PDF Form Automator",
+  "description": "Extract fields from PDF forms, generate Excel templates, and bulk-fill PDFs from Excel data.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
