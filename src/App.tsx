@@ -87,50 +87,89 @@ export default function App() {
 
   // AI Smart Mapping
   const runAiMapping = async () => {
-    if (!pdfMetadata || !excelData) return;
+    if (!pdfMetadata || !excelData || pdfMetadata.fields.length === 0) {
+      setError('No fields found to map or missing data.');
+      return;
+    }
+    
     setIsAiMapping(true);
     setError(null);
+    console.log('Starting AI Mapping for', pdfMetadata.fields.length, 'fields');
 
     try {
       const response = await (genAI as any).models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `
-          You are a data mapping assistant. I have a PDF form with these field names:
-          ${pdfMetadata.fields.join(', ')}
-          
-          And an Excel file with these column headers:
-          ${excelData.headers.join(', ')}
-          
-          Task: Analyze the semantic similarity and return a JSON array of objects mapping PDF fields to Excel headers.
-          Format: [{ "pdfField": "string", "excelHeader": "string" }]
-          Do not return any other text, only the JSON array.
-          If you are unsure or there is no good match, set excelHeader to null.
-        `
+        contents: [{
+          role: 'user',
+          parts: [{
+            text: `
+              You are a data mapping assistant. I have a PDF form with these field names:
+              ${pdfMetadata.fields.join(', ')}
+              
+              And an Excel file with these column headers:
+              ${excelData.headers.join(', ')}
+              
+              Task: Analyze the semantic similarity and return a JSON array of objects mapping PDF fields to Excel headers.
+              Format: [{ "pdfField": "string", "excelHeader": "string" }]
+              
+              CRITICAL: 
+              1. Return ONLY the JSON array. No conversational text.
+              2. If a field has no good match, set excelHeader to null.
+              3. Ensure the JSON is valid and correctly escaped.
+            `
+          }]
+        }]
       });
 
-      const text = response.text?.trim() || '[]';
-      // Basic cleaning
-      const cleanedJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      if (!response || !response.text) {
+        throw new Error('AI returned an empty response.');
+      }
+
+      const rawText = response.text;
+      console.log('AI Mapping Response Received');
+      
+      const startIdx = rawText.indexOf('[');
+      const endIdx = rawText.lastIndexOf(']');
+      
+      if (startIdx === -1 || endIdx === -1) {
+        console.warn('Malformed AI Response:', rawText);
+        throw new Error('AI response did not contain a valid mapping array.');
+      }
+      
+      const cleanedJson = rawText.substring(startIdx, endIdx + 1);
       const aiMappings = JSON.parse(cleanedJson);
 
-      const newMapping = { ...mapping };
-      let missingFields: string[] = [];
+      if (!Array.isArray(aiMappings)) {
+        throw new Error('AI response was not a list.');
+      }
 
-      aiMappings.forEach((m: { pdfField: string, excelHeader: string }) => {
-        if (m.pdfField && m.excelHeader) {
-          newMapping[m.pdfField] = m.excelHeader;
-        } else if (m.pdfField) {
-           missingFields.push(m.pdfField);
+      const newMapping = { ...mapping };
+      let missingCount = 0;
+      let matchedCount = 0;
+
+      aiMappings.forEach((m: any) => {
+        if (m && typeof m === 'object' && m.pdfField && m.excelHeader) {
+          const hasPdfField = pdfMetadata.fields.includes(m.pdfField);
+          const hasExcelHeader = excelData.headers.includes(m.excelHeader);
+          
+          if (hasPdfField && hasExcelHeader) {
+            newMapping[m.pdfField] = m.excelHeader;
+            matchedCount++;
+          }
+        } else if (m && m.pdfField) {
+          missingCount++;
         }
       });
 
       setMapping(newMapping);
-      if (missingFields.length > 0) {
-        setError(`AI could not find matches for ${missingFields.length} fields. Please map them manually.`);
+      if (matchedCount === 0) {
+        setError('AI could not find any matches. Please map fields manually.');
+      } else if (missingCount > 0) {
+        setError(`AI matched ${matchedCount} fields but was unsure about ${missingCount} others.`);
       }
     } catch (err) {
-      console.error(err);
-      setError('AI mapping failed. Please try manual mapping.');
+      console.error('AI Mapping Error:', err);
+      setError(err instanceof Error ? err.message : 'AI mapping failed. Network issue or API error?');
     } finally {
       setIsAiMapping(false);
     }
@@ -406,7 +445,7 @@ export default function App() {
                       className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-indigo-600/10 active:scale-[0.98]"
                     >
                       {isAiMapping ? <Loader2 size={18} className="animate-spin" /> : <BrainCircuit size={18} />}
-                      Smart Auto-Map
+                      {isAiMapping ? 'Analyzing Fields...' : 'Smart Auto-Map'}
                     </button>
                   </div>
 
