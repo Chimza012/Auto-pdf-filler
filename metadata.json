@@ -1,6 +1,6 @@
 {
-  "name": "Remix: PDF Form Automator",
-  "description": "Extract fields from PDF forms, generate Excel templates, and bulk-fill PDFs from Excel data.",
+  "name": "DocuFill AI",
+  "description": "Bulk-fill PDF forms using Excel data with AI-powered field mapping.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }
