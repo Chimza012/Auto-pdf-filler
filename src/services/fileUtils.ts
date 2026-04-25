@@ -70,13 +70,19 @@ export const formatDate = (dateValue: any, format: 'PDF' | 'FILE'): string => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+export interface FillResult {
+  pdfBytes: Uint8Array;
+  skips: string[];
+}
+
 export const fillPDF = async (
   templateBuffer: ArrayBuffer,
   mapping: Record<string, string>,
   rowData: any
-): Promise<Uint8Array> => {
+): Promise<FillResult> => {
   const pdfDoc = await PDFDocument.load(templateBuffer);
   const form = pdfDoc.getForm();
+  const skips: string[] = [];
 
   for (const [pdfField, excelHeader] of Object.entries(mapping)) {
     if (!excelHeader) continue;
@@ -100,9 +106,17 @@ export const fillPDF = async (
       } else {
         stringValue = String(value);
       }
+
+      // Skip logic: check if data exceeds field size
+      const maxLen = field.getMaxLength();
+      if (maxLen !== undefined && stringValue.length > maxLen) {
+        skips.push(`${pdfField} (Data: "${stringValue}" is ${stringValue.length} chars, limit ${maxLen})`);
+        continue;
+      }
+
       field.setText(stringValue);
     } else if (field instanceof PDFCheckBox) {
-      const isChecked = ['true', 'yes', '1', 'on', 'checked'].includes(String(value).toLowerCase());
+      const isChecked = ['true', 'yes', '1', 'on', 'checked', 'x'].includes(String(value).toLowerCase());
       if (isChecked) {
         field.check();
       } else {
@@ -111,9 +125,8 @@ export const fillPDF = async (
     }
   }
 
-  // Flatten the form to make it non-editable if desired, but here we just return
-  // form.flatten(); 
-  return await pdfDoc.save();
+  const pdfBytes = await pdfDoc.save();
+  return { pdfBytes, skips };
 };
 
 export const generateOutputName = (

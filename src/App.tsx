@@ -45,6 +45,7 @@ export default function App() {
   
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [zipBlob, setZipBlob] = useState<Blob | null>(null);
+  const [skippedFields, setSkippedFields] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   // File Inputs
@@ -184,24 +185,30 @@ export default function App() {
     setError(null);
 
     const zip = new JSZip();
+    const allSkips: string[] = [];
 
     try {
       for (let i = 0; i < excelData.rows.length; i++) {
         const row = excelData.rows[i];
         const fileName = generateOutputName(filenamePattern, row);
         
-        const filledPdfBytes = await fillPDF(
+        const result = await fillPDF(
           pdfMetadata.originalBuffer,
           mapping,
           row
         );
         
-        zip.file(`${fileName}.pdf`, filledPdfBytes);
+        if (result.skips.length > 0) {
+          allSkips.push(`Row ${i + 1} (${fileName}): ${result.skips.join(' | ')}`);
+        }
+
+        zip.file(`${fileName}.pdf`, result.pdfBytes);
         setProgress(prev => ({ ...prev, current: i + 1 }));
       }
 
       const content = await zip.generateAsync({ type: 'blob' });
       setZipBlob(content);
+      setSkippedFields(allSkips);
       setState('FINISHED');
     } catch (err) {
       setError('An error occurred during processing. Please check your data.');
@@ -543,6 +550,20 @@ export default function App() {
                 <h2 className="text-4xl font-bold mb-4">Processing Complete!</h2>
                 <p className="text-slate-400 text-lg mb-12">Batch process successful. {progress.total} forms have been generated and bundled into a secure ZIP archive.</p>
                 
+                {skippedFields.length > 0 && (
+                  <div className="mb-12 bg-amber-500/10 border border-amber-500/20 rounded-2xl p-6 text-left">
+                    <h4 className="text-amber-400 font-bold mb-3 flex items-center gap-2">
+                      <AlertCircle size={18} /> Some fields were skipped due to data length:
+                    </h4>
+                    <div className="max-h-48 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                      {skippedFields.map((skip, idx) => (
+                        <div key={idx} className="text-sm text-slate-400 border-l-2 border-amber-500/30 pl-3 py-1">
+                          {skip}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="flex flex-col gap-4">
                   <button 
                     onClick={downloadZip}
@@ -565,6 +586,7 @@ export default function App() {
                         setPdfMetadata(null);
                         setExcelData(null);
                         setMapping({});
+                        setSkippedFields([]);
                         setState('UPLOAD');
                       }}
                       className="bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 py-4 rounded-xl font-medium flex items-center justify-center gap-2 transition-all"
